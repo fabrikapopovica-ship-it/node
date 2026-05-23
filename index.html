@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Community Messenger (С интернетом)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            tgBgDark: '#0e1621', tgBgChat: '#17212b', tgBgInput: '#101921',
+            tgAccent: '#2481cc', tgAccentHover: '#2aabee',
+            tgBubbleIn: '#182533', tgBubbleOut: '#2b5278',
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #0e1621; }
+    ::-webkit-scrollbar-thumb { background: #2481cc44; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2481ccaa; }
+  </style>
+</head>
+<body class="bg-tgBgDark text-gray-200 h-screen overflow-hidden flex flex-col font-sans select-none">
+
+  <div id="auth-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-tgBgDark p-4 overflow-y-auto">
+    <div class="w-full max-w-sm rounded-2xl border border-gray-800 bg-[#17212b] p-6 shadow-2xl text-center my-auto max-h-[95vh] overflow-y-auto">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-tr from-[#2481cc] to-[#2aabee] text-white shadow-lg mb-3">
+        <i data-lucide="globe" class="h-6 w-6"></i>
+      </div>
+      <h2 class="text-xl font-bold text-white tracking-wide">Community Messenger</h2>
+      <p class="mt-1 text-[11px] text-emerald-400 flex items-center justify-center gap-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Режим: Живой Интернет
+      </p>
+
+      <form id="profile-form" class="mt-4 text-left space-y-3">
+        <div>
+          <label class="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Ваше имя в чате</label>
+          <div class="relative">
+            <span class="absolute left-3 top-2.5 text-gray-500"><i data-lucide="user" class="h-4 w-4"></i></span>
+            <input type="text" id="auth-username" required placeholder="Например: Иван" class="w-full rounded-xl border border-gray-800 bg-[#101921] py-2 pl-9 pr-4 text-xs text-white placeholder-gray-500 focus:border-[#2481cc] focus:outline-none" />
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Аватар</label>
+            <select id="auth-avatar" class="w-full rounded-xl border border-gray-800 bg-[#101921] px-2 py-2 text-xs text-white focus:outline-none">
+              <option value="👤">👤 Игрок</option>
+              <option value="🦊">🦊 Лис</option>
+              <option value="💻">💻 Кодер</option>
+              <option value="🚀">🚀 Ракета</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Статус</label>
+            <select id="auth-role" class="w-full rounded-xl border border-gray-800 bg-[#101921] px-2 py-2 text-xs text-white focus:outline-none">
+              <option value="Пользователь">Пользователь</option>
+              <option value="Разработчик">Разработчик</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full mt-2 rounded-xl bg-[#2481cc] py-2.5 text-xs font-bold text-white transition hover:bg-[#2aabee] active:scale-[0.98]">
+          Зарегистрироваться и войти
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="flex flex-1 overflow-hidden">
+    
+    <aside class="w-64 border-r border-gray-800 bg-tgBgChat flex flex-col shrink-0">
+      <div class="p-3 border-b border-gray-800 flex items-center justify-between bg-tgBgDark">
+        <div class="flex items-center gap-2 min-w-0">
+          <div id="my-avatar" class="w-8 h-8 rounded-full bg-[#2481cc]/20 flex items-center justify-center text-sm border border-[#2481cc]/40 shrink-0">👤</div>
+          <div class="min-w-0">
+            <div id="my-name" class="font-bold text-xs text-white truncate max-w-[100px]">Имя</div>
+            <div class="flex items-center gap-1">
+              <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <div id="my-role" class="text-[9px] text-gray-400 truncate">Подключение...</div>
+            </div>
+          </div>
+        </div>
+        <button id="logout-btn" title="Выйти" class="p-1 hover:bg-red-500/15 rounded-lg text-gray-500 hover:text-red-400 transition">
+          <i data-lucide="log-out" class="h-3.5 w-3.5"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto" id="sidebar-lists">
+        <div class="p-2 border-b border-gray-800/50 bg-tgBgDark/30">
+          <button id="open-create-channel-btn" class="w-full py-1 px-2 rounded-lg border border-dashed border-gray-700 hover:border-tgAccent hover:text-tgAccent transition text-left flex items-center justify-between text-[11px]">
+            <span>Создать общий канал</span>
+            <i data-lucide="plus" class="h-3 w-3"></i>
+          </button>
+        </div>
+        <div id="chats-list" class="divide-y divide-gray-800/20"></div>
+      </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col bg-tgBgDark relative">
+      <div id="chat-empty-screen" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-tgBgDark z-10">
+        <div class="w-12 h-12 rounded-full bg-tgBgChat flex items-center justify-center text-gray-500 mb-3 border border-gray-800">
+          <i data-lucide="message-square" class="h-6 w-6 text-tgAccent"></i>
+        </div>
+        <h3 class="text-xs font-semibold text-white">Выберите канал слева</h3>
+        <p class="text-[11px] text-gray-500 mt-1">Любое сообщение увидят все пользователи в реальном времени.</p>
+      </div>
+
+      <header class="h-12 px-4 border-b border-gray-800 flex items-center justify-between bg-tgBgChat z-20 shrink-0">
+        <div class="flex items-center gap-2">
+          <div id="active-chat-avatar" class="w-7 h-7 rounded-full bg-tgAccent/20 flex items-center justify-center border border-tgAccent/40 text-sm">📡</div>
+          <div>
+            <div id="active-chat-title" class="text-xs font-bold text-white truncate max-w-[200px]">Название</div>
+            <div id="active-chat-subtitle" class="text-[9px] text-gray-400 truncate max-w-[200px]">Описание</div>
+          </div>
+        </div>
+      </header>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-3" id="messages-container" style="background-image: radial-gradient(#1c2333 1px, transparent 1px); background-size: 16px 16px;"></div>
+
+      <footer class="p-2 bg-tgBgChat border-t border-gray-800 z-20 shrink-0">
+        <form id="message-form" class="flex items-center gap-2">
+          <label for="file-upload-input" class="p-2 bg-tgBgInput hover:bg-gray-800/80 rounded-xl border border-gray-800/80 text-gray-400 hover:text-white cursor-pointer transition flex items-center justify-center shrink-0">
+            <i data-lucide="paperclip" class="h-4 w-4"></i>
+            <input type="file" id="file-upload-input" class="hidden" accept="image/*"/>
+          </label>
+          <div class="flex-1">
+            <input type="text" id="message-text-input" autocomplete="off" placeholder="Написать сообщение в интернет-эфир..." class="w-full rounded-xl border border-gray-800 bg-[#101921] py-2 px-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-tgAccent" />
+          </div>
+          <button type="submit" class="p-2 rounded-xl bg-tgAccent hover:bg-tgAccentHover text-white transition shrink-0">
+            <i data-lucide="send" class="h-4 w-4"></i>
+          </button>
+        </form>
+        <div id="attachment-preview-zone" class="hidden mt-2 p-1.5 bg-[#101921] rounded-xl border border-gray-800 flex items-center justify-between">
+          <div class="flex items-center gap-2 text-[11px]">
+            <i data-lucide="image" class="h-3.5 w-3.5 text-tgAccent"></i>
+            <span id="attachment-preview-name" class="text-white truncate max-w-[250px]">img.png</span>
+          </div>
+          <button id="cancel-attachment-btn" class="p-1 text-red-400 rounded-lg"><i data-lucide="x" class="h-3 w-3"></i></button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <div id="create-channel-modal" class="fixed inset-0 z-40 hidden flex items-center justify-center bg-black/70 backdrop-blur-xs px-4">
+    <div class="w-full max-w-sm rounded-2xl border border-gray-800 bg-tgBgChat p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold text-white uppercase tracking-wider">Новый интернет-канал</h3>
+        <button id="close-modal-btn" class="p-1 text-gray-500 hover:text-white rounded-lg"><i data-lucide="x" class="h-4 w-4"></i></button>
+      </div>
+      <form id="create-channel-form" class="space-y-3">
+        <input type="text" id="new-channel-name" required placeholder="Название канала" class="w-full rounded-xl border border-gray-800 bg-tgBgInput py-2 px-3 text-xs text-white focus:outline-none focus:border-tgAccent" />
+        <input type="text" id="new-channel-description" placeholder="Описание" class="w-full rounded-xl border border-gray-800 bg-tgBgInput py-2 px-3 text-xs text-white focus:outline-none focus:border-tgAccent" />
+        <button type="submit" class="w-full rounded-xl bg-tgAccent py-2 text-xs font-bold text-white transition hover:bg-tgAccentHover">Создать для всех</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    // ВОТ ТЕ САМЫЕ СТРОКИ, КОТОРЫХ НЕ ХВАТАЛО:
+    const profileForm = document.getElementById('profile-form');
+    const chatsList = document.getElementById('chats-list');
+    const messagesContainer = document.getElementById('messages-container');
+
+    // Хранилища данных
+    let currentUser = JSON.parse(localStorage.getItem('net_user')) || null;
+    let channels = JSON.parse(localStorage.getItem('net_channels')) || [
+      { id: 'global_main', name: 'Общий чат', description: 'Главная комната для всех участников' },
+      { id: 'global_dev', name: 'Разработка', description: 'Обсуждение багов и обновлений' }
+    ];
+    let messagesCache = JSON.parse(localStorage.getItem('net_messages_cache')) || {};
+    let activeChat = null;
+    let currentPendingFile = null;
+
+    // Подключение к публичному защищенному серверу WebSockets (MQTT)
+    const BASE_TOPIC = "electron_community_messenger_2026";
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+
+    client.on('connect', () => {
+      document.getElementById('status-dot').className = "w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse";
+      document.getElementById('my-role').textContent = "В сети (Интернет)";
+      document.getElementById('my-role').className = "text-[9px] text-emerald-400";
+
+      client.subscribe(`${BASE_TOPIC}/channels/new`);
+      client.subscribe(`${BASE_TOPIC}/+/messages`);
+    });
+
+    client.on('close', () => {
+      document.getElementById('status-dot').className = "w-1.5 h-1.5 rounded-full bg-red-500";
+      document.getElementById('my-role').textContent = "Переподключение...";
+      document.getElementById('my-role').className = "text-[9px] text-red-400";
+    });
+
+    client.on('message', (topic, payload) => {
+      try {
+        const data = JSON.parse(payload.toString());
+        
+        if (topic === `${BASE_TOPIC}/channels/new`) {
+          if (!channels.some(c => c.id === data.id)) {
+            channels.push(data);
+            localStorage.setItem('net_channels', JSON.stringify(channels));
+            renderSidebar();
+          }
+        } 
+        else {
+          const match = topic.match(new RegExp(`${BASE_TOPIC}/(.+)/messages`));
+          if (match) {
+            const channelId = match[1];
+            if (!messagesCache[channelId]) messagesCache[channelId] = [];
+            
+            if (!messagesCache[channelId].some(m => m.id === data.id)) {
+              messagesCache[channelId].push(data);
+              localStorage.setItem('net_messages_cache', JSON.stringify(messagesCache));
+              if (activeChat && activeChat.id === channelId) {
+                renderMessages();
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Ошибка сети:", e);
+      }
+    });
+
+    if (currentUser) {
+      setupMainApp();
+    } else {
+      document.getElementById('auth-screen').classList.remove('hidden');
+    }
+
+    // ТЕПЕРЬ ФОРМА РАБОТАЕТ И НЕ ПЕРЕЗАГРУЖАЕТ СТРАНИЦУ
+    profileForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      currentUser = {
+        id: 'user_' + Math.random().toString(36).substr(2, 9),
+        name: document.getElementById('auth-username').value.trim(),
+        avatar: document.getElementById('auth-avatar').value,
+        role: document.getElementById('auth-role').value
+      };
+      localStorage.setItem('net_user', JSON.stringify(currentUser));
+      setupMainApp();
+    });
+
+    function setupMainApp() {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('my-name').textContent = currentUser.name;
+      document.getElementById('my-avatar').textContent = currentUser.avatar;
+      renderSidebar();
+    }
+
+    function renderSidebar() {
+      chatsList.innerHTML = '';
+      channels.forEach(chan => {
+        const div = document.createElement('div');
+        const isActive = activeChat && activeChat.id === chan.id;
+        div.className = `flex items-center gap-2.5 p-2.5 cursor-pointer hover:bg-gray-800/30 transition border-l-2 ${isActive ? 'border-tgAccent bg-tgAccent/10' : 'border-transparent'}`;
+        div.innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-tgAccent/15 flex items-center justify-center border border-tgAccent/30 text-sm">📡</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-xs text-white truncate"># ${chan.name}</div>
+            <p class="text-[10px] text-gray-400 truncate">${chan.description || 'Без описания'}</p>
+          </div>`;
+        div.onclick = () => selectChat(chan);
+        chatsList.appendChild(div);
+      });
+    }
+
+    function selectChat(chat) {
+      activeChat = chat;
+      document.getElementById('chat-empty-screen').classList.add('hidden');
+      document.getElementById('active-chat-title').textContent = `# ${chat.name}`;
+      document.getElementById('active-chat-subtitle').textContent = chat.description || '';
+      renderSidebar();
+      renderMessages();
+    }
+
+    function renderMessages() {
+      messagesContainer.innerHTML = '';
+      const msgs = messagesCache[activeChat.id] || [];
+      
+      msgs.forEach(msg => {
+        const isMyMessage = msg.senderId === currentUser.id;
+        const timeString = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const wrapper = document.createElement('div');
+        wrapper.className = `flex gap-2 max-w-[85%] ${isMyMessage ? 'ml-auto flex-row-reverse' : 'mr-auto'}`;
+        
+        let fileHtml = '';
+        if (msg.file) {
+          fileHtml = `<img src="${msg.file}" class="mt-1.5 max-h-40 rounded-lg object-contain border border-gray-800" />`;
+        }
+
+        wrapper.innerHTML = `
+          <div class="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center text-xs shrink-0 select-none">${msg.avatar || '👤'}</div>
+          <div class="p-2.5 rounded-2xl relative flex flex-col ${isMyMessage ? 'bg-tgBubbleOut text-white rounded-tr-none' : 'bg-tgBubbleIn text-gray-100 rounded-tl-none'}">
+            <span class="text-[9px] font-bold text-tgAccent/90 block mb-0.5">${msg.name} <span class="text-[8px] text-gray-400 font-normal ml-1">(${msg.role || 'User'})</span></span>
+            ${msg.text ? `<p class="text-xs whitespace-pre-wrap selection:bg-tgAccent">${msg.text}</p>` : ''}
+            ${fileHtml}
+            <span class="text-[8px] text-gray-400 self-end mt-1 block">${timeString}</span>
+          </div>`;
+        messagesContainer.appendChild(wrapper);
+      });
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    document.getElementById('message-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('message-text-input');
+      const text = input.value.trim();
+      if (!activeChat || (!text && !currentPendingFile)) return;
+
+      const newMsg = {
+        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        senderId: currentUser.id,
+        name: currentUser.name,
+        avatar: currentUser.avatar,
+        role: currentUser.role,
+        text: text,
+        file: currentPendingFile,
+        timestamp: new Date().getTime()
+      };
+
+      client.publish(`${BASE_TOPIC}/${activeChat.id}/messages`, JSON.stringify(newMsg));
+
+      input.value = '';
+      currentPendingFile = null;
+      document.getElementById('attachment-preview-zone').classList.add('hidden');
+      document.getElementById('file-upload-input').value = '';
+    });
+
+    document.getElementById('file-upload-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 300 * 1024) {
+        alert("Пожалуйста, выберите изображение размером меньше 300 КБ для экономии интернет-трафика.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        currentPendingFile = evt.target.result;
+        document.getElementById('attachment-preview-zone').classList.remove('hidden');
+        document.getElementById('attachment-preview-name').textContent = file.name;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('cancel-attachment-btn').addEventListener('click', () => {
+      currentPendingFile = null;
+      document.getElementById('file-upload-input').value = '';
+      document.getElementById('attachment-preview-zone').classList.add('hidden');
+    });
+
+    document.getElementById('open-create-channel-btn').addEventListener('click', () => document.getElementById('create-channel-modal').classList.remove('hidden'));
+    document.getElementById('close-modal-btn').addEventListener('click', () => document.getElementById('create-channel-modal').classList.add('hidden'));
+    
+    document.getElementById('create-channel-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('new-channel-name').value.trim();
+      const desc = document.getElementById('new-channel-description').value.trim();
+      if (!name) return;
+
+      const newChannel = { 
+        id: 'chan_' + Date.now(), 
+        name: name, 
+        description: desc 
+      };
+
+      client.publish(`${BASE_TOPIC}/channels/new`, JSON.stringify(newChannel));
+      
+      document.getElementById('create-channel-modal').classList.add('hidden');
+      document.getElementById('new-channel-name').value = '';
+      document.getElementById('new-channel-description').value = '';
+      selectChat(newChannel);
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      if(confirm("Выйти из профиля?")) {
+        localStorage.clear();
+        location.reload();
+      }
+    });
+  </script>
+</body>
+</html>
